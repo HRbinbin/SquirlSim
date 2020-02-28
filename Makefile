@@ -13,7 +13,7 @@ CFLAGS=	-cc=icc
 
 SRCDIR := src
 BUILDDIR := build
-TARGET := bin/main
+TARGET := bin/test
 
 SRCEXT := c
 SOURCES := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
