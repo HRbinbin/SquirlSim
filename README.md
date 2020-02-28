@@ -4,7 +4,7 @@ This is a simulation of British red squirrels infecting parapoxvirus.
 
 ## Environment setup
 
-After entering directory `mppcw1`, run
+After entering directory `SquirlSim`, run
 ```$xslt
 $ module load intel-compilers-18
 $ module load mpt
