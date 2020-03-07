@@ -1,7 +1,6 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <time.h>
 
 #include "ran2.h"
 #include "squirl.h"
@@ -30,13 +29,12 @@ void initialiseRNG(long *seed) {
  * generator and is also modified.
  * x_new can point to x, and y_new can point to y
  */
-void squirrelStep(float x, float y, float* x_new, float* y_new, long * state){
-
+void squirrelStep(float* x, float* y, float* x_new, float* y_new, long * state){
     float diff=ran2(state);
-    *x_new=(x+diff)-(int)(x+diff);
+    *x_new=(*x+diff)-(int)(*x+diff);
 
     diff=ran2(state);
-    *y_new=(y+diff)-(int)(y+diff);
+    *y_new=(*y+diff)-(int)(*y+diff);
 }
 
 /**
@@ -70,6 +68,6 @@ int willDie(long * state) {
 /**
  * Returns the id of the cell from its x and y coordinates.
  */
-int getCellFromPosition(float x, float y){
-    return((int)(x*4)+4*(int)(y*4));
+int getCellFromPosition(float * x, float * y){
+    return((int)(*x*4)+4*(int)(*y*4));
 }

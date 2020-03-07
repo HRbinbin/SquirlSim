@@ -18,7 +18,7 @@ TARGET := bin/test
 SRCEXT := c
 SOURCES := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
 OBJECTS := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.o))
-LIB := -lm
+LIB := -lm -fopenmp -O3
 INC := -I include
 
 $(TARGET): $(OBJECTS)
