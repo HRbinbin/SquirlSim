@@ -1,6 +1,8 @@
 # Squirrels disease simulation
 
-This is a simulation of British red squirrels infecting parapoxvirus. 
+This is a simulation of British red squirrels infecting parapoxvirus.
+
+The infrastructure is **Master actor + Controller actor + N land actors + N squirrel actors**  
 
 ## Environment setup
 
