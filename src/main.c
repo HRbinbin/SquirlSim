@@ -12,13 +12,19 @@
 #include "main.h"
 
 static long seed;
+int cellWorkers[LENGTH_OF_LAND];
+int controllerWorkerPid;
+MPI_Group worldGroup, landGroup;
+MPI_Comm landComm;
 
 struct Squirrel initialiseSquirrel();
-struct LandCells initialiseLandCells();
+struct LandCell initialiseLandCell();
 static void workerCode(WorkerFunc workerFunc);
 int squirrelWorker();
-struct LandCells updateLand(int month, int squirrelPid, struct LandCells cells, int* squirlSignal);
-struct LandCells renewMonth(int month, struct LandCells cells);
+int landWorker();
+int controllerWorker();
+struct LandCell updateLand(int month, int squirrelPid, struct LandCell cell);
+struct LandCell renewMonth(int month, struct LandCell cell);
 struct Squirrel squirlGo(int rank, struct Squirrel squirl);
 
 
@@ -26,10 +32,14 @@ int main(int argc, char* argv[]) {
     // Call MPI initialize first
     MPI_Init(&argc, &argv);
 
-    int rank;
+    int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
     seed = -1-rank;
     initialiseRNG(&seed);
+
+    MPI_Comm_group(MPI_COMM_WORLD, &worldGroup);
 
     /*
      * Initialise the process pool.
@@ -39,9 +49,22 @@ int main(int argc, char* argv[]) {
     int statusCode = processPoolInit();
 
     if (statusCode == 1) {
+        int identity;
+        MPI_Recv(&identity, 1, MPI_INT, MPI_ANY_SOURCE, 10, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+//        printf("I am rank %d, I am a %d\n", rank, identity);
         // A worker so do the worker tasks
         WorkerFunc wf;
-        if (rank == LAND_ACTOR){
+
+        if (identity == CONTROLLER_ACTOR) {
+            MPI_Recv(cellWorkers, LENGTH_OF_LAND, MPI_INT, 0, 10, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            wf = controllerWorker;
+        } else if (identity == LAND_ACTOR){
+            MPI_Recv(&controllerWorkerPid, 1, MPI_INT, 0, 10, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Recv(cellWorkers, LENGTH_OF_LAND, MPI_INT, 0, 10, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // Create a communicator for land actors group
+            MPI_Group_incl(worldGroup, LENGTH_OF_LAND, cellWorkers, &landGroup);
+            MPI_Comm_create(MPI_COMM_WORLD, landGroup, &landComm);
+
             wf = landWorker;
         } else {
             wf = squirrelWorker;
@@ -56,30 +79,58 @@ int main(int argc, char* argv[]) {
          * Basically it just starts 10 workers and then registers when each one has completed. When they have all completed it
          * shuts the entire pool down
          */
-        int i, activeWorkers, sick_count = 0;
+        int i, sickCount = 0, identity;
 
-        // Initialise squirrels
-        for (i=0;i<INITIAL_NUMBER_OF_SQUIRRELS + 1;i++) {
+        // Initial controller
+        int workerPid = startWorkerProcess();
+        identity = CONTROLLER_ACTOR;
+        // Tell the process that it is a controller
+        MPI_Ssend(&identity, 1, MPI_INT, workerPid, 10, MPI_COMM_WORLD);
+        controllerWorkerPid = workerPid;
+
+        // Initial land actors
+        for (i=0;i<LENGTH_OF_LAND;i++) {
             int workerPid = startWorkerProcess();
-            if (workerPid==LAND_ACTOR){
-                continue;
-            }
+            identity = LAND_ACTOR;
+            // Tell processes that they are land actors
+            MPI_Ssend(&identity, 1, MPI_INT, workerPid, 10, MPI_COMM_WORLD);
+            MPI_Ssend(&controllerWorkerPid, 1, MPI_INT, workerPid, 10, MPI_COMM_WORLD);
+            cellWorkers[i] = workerPid;
+        }
 
+        MPI_Ssend(cellWorkers, LENGTH_OF_LAND, MPI_INT, controllerWorkerPid, 10, MPI_COMM_WORLD);
+
+        for (i=0;i<LENGTH_OF_LAND;i++) {
+            // Send the message to tell the land's pids to all land actors.
+            MPI_Ssend(cellWorkers, LENGTH_OF_LAND, MPI_INT, cellWorkers[i], 10, MPI_COMM_WORLD);
+        }
+
+        // Initial squirrel actors
+        for (i=0;i<INITIAL_NUMBER_OF_SQUIRRELS;i++) {
+            int workerPid = startWorkerProcess();
+            identity = SQUIRREL_ACTOR;
+            // Tell processes that they are squirrel actors
+            MPI_Ssend(&identity, 1, MPI_INT, workerPid, 10, MPI_COMM_WORLD);
             int SquirlState;
-            if (sick_count < INITIAL_INFECTION_LEVEL){
+            if (sickCount < INITIAL_INFECTION_LEVEL){
                 SquirlState = SICK;
-                sick_count++;
-            } else if (workerPid < INITIAL_NUMBER_OF_SQUIRRELS) {
+                sickCount++;
+            } else  {
                 SquirlState = HEALTHY;
             }
             MPI_Send(&SquirlState, 1, MPI_INT, workerPid, 1, MPI_COMM_WORLD);
-            activeWorkers++;
+            // Tell Squirrels who is controller
+            MPI_Ssend(&controllerWorkerPid, 1, MPI_INT, workerPid, 11, MPI_COMM_WORLD);
+            // Tell Squirrels who are land actors
+            MPI_Ssend(&cellWorkers, LENGTH_OF_LAND, MPI_INT, workerPid, 12, MPI_COMM_WORLD);
         }
+
 
         int masterStatus = masterPoll();
         while (masterStatus) {
             masterStatus=masterPoll();
         }
+        printf("Master Quit\n");
     }
 
     // Finalizes the process pool, call this before closing down MPI
@@ -99,102 +150,193 @@ static void workerCode(WorkerFunc workerFunc) {
 
 int squirrelWorker(){
     struct Squirrel squirl = initialiseSquirrel();
-    int rank, terminateSignal;
+    int rank;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    while (squirl.state){
-        // Send the rank to land to tell who I am
-        MPI_Ssend(&rank, 1, MPI_INT, LAND_ACTOR, 0, MPI_COMM_WORLD);
-        // Recv the permission signal
-        MPI_Recv(&terminateSignal, 1, MPI_INT, LAND_ACTOR, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    while (squirl.state != NOT_EXIST && squirl.state != TERMINATE){
+        squirl = squirlGo(rank, squirl);
+        if (squirl.state == NOT_EXIST){
+            // Tell controller I am dead.
+//            printf("I am Squirrel %d, I walked %d steps, I am dead now.\n", rank, squirl.steps);
+            MPI_Ssend(&squirl.state, 1, MPI_INT, controllerWorkerPid, 99, MPI_COMM_WORLD);
 
-        if (terminateSignal) {
-//            printf("I am Squirrel %d, I am alive but I should terminate now.\n", rank);
-            break;
-        } else {
-            squirl = squirlGo(rank, squirl);
-            if (squirl.state == NOT_EXIST){
-//                printf("I am Squirrel %d, I walked %d steps, I am dead now.\n", rank, squirl.steps);
-            } else if (squirl.state == BORN) {
-                printf("I am Squirrel %d, I just born.\n", rank);
-                squirl.state = HEALTHY;
-            } else if (squirl.state == CATCH_DISEASE) {
-//                printf("I am Squirrel %d, I catch disease.\n", rank);
-                squirl.state = SICK;
-            }
+        } else if (squirl.state == CATCH_DISEASE) {
+            // Tell controller I am sick.
+            MPI_Ssend(&squirl.state, 1, MPI_INT, controllerWorkerPid, 99, MPI_COMM_WORLD);
+//            printf("I am Squirrel %d, I catch disease.\n", rank);
+            squirl.state = SICK;
+        } else if (squirl.state == TERMINATE) {
+            MPI_Ssend(&squirl.state, 1, MPI_INT, controllerWorkerPid, 99, MPI_COMM_WORLD);
+//            printf("I am Squirrel %d, I am still alive. But I should stop.\n", rank);
         }
     }
-
+//    printf("I am Squirrel %d, I quit, my state is %d\n", rank, squirl.state);
     return 0;
 }
 
 int landWorker(){
+    struct LandCell cell = initialiseLandCell();
+    int permissionSignal, terminateSignal, squirrelPid, activeSignal, month, flag;
+    MPI_Request request;
+    MPI_Status status;
 
-    struct LandCells cells = initialiseLandCells();
-    double duration, wait_time, start, start_for_wait, end;
-    int count, month, i, j, remainSquirrel, infectedSquirrel, totalDeadSquirrel, squirrelPid, squirlSignal, terminateSignal, activeWorkers;
-    count = 0;
-    month = 1;
-    duration = 0;
-    terminateSignal = 0;
+    permissionSignal = 1;
+    terminateSignal = 1;
+    month = 0;
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    while (1){
+        if (month == SQUIRREL_STOP_SIGNAL) {
+//            MPI_Barrier(landComm);
+            permissionSignal = 0;
+        }
+
+        // Recv the request from other workers
+        MPI_Probe(MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+
+        if (status.MPI_SOURCE == controllerWorkerPid) {
+            // This is the message from controller for update month
+            MPI_Recv(&month, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD, &status);
+
+            if (month == LAND_STOP_SIGNAL) {
+                break;
+            }
+            else if (month == SQUIRREL_STOP_SIGNAL) {
+//                printf("I am land %d, I know squirrel permission signal, ", rank);
+                continue;
+            }
+
+            MPI_Ssend(&cell.population[(month-1) % LAST_POPULATION_MONTHS], 1, MPI_INT, status.MPI_SOURCE, 199, MPI_COMM_WORLD);
+            MPI_Ssend(&cell.infection[(month-1) % LAST_INFECTION_MONTHS], 1, MPI_INT, status.MPI_SOURCE, 199, MPI_COMM_WORLD);
+            cell = renewMonth(month, cell);
+            MPI_Barrier(landComm);
+        } else {
+            // This is the message from squirrels for update cell
+            MPI_Recv(&squirrelPid, 1, MPI_INT, status.MPI_SOURCE, 0, MPI_COMM_WORLD, &status);
+            MPI_Ssend(&permissionSignal, 1, MPI_INT, squirrelPid, 2, MPI_COMM_WORLD);
+            if (permissionSignal) {
+                cell = updateLand(month, squirrelPid, cell);
+            } else {
+//                printf("squirrel permission signal sent to sq %d\n", status.MPI_SOURCE);
+            }
+        }
+    }
+
+//    printf("I am rank %d, I am stop, permission %d, month %d\n", rank, permissionSignal, month);
+
+    return 0;
+}
+
+int controllerWorker(){
+    int i, flag, activeLandWorkers, activeSquirrelWorkers, month, permissionSignal, stopSignal,
+    remainSquirrel, infectedSquirrel, totalDeadSquirrel, squirlSignal,
+    populationBuffer[LENGTH_OF_LAND], infectionBuffer[LENGTH_OF_LAND];
+    MPI_Status status;
+    permissionSignal = 1;
     remainSquirrel = INITIAL_NUMBER_OF_SQUIRRELS;
-    activeWorkers = INITIAL_NUMBER_OF_SQUIRRELS;
+    activeSquirrelWorkers = INITIAL_NUMBER_OF_SQUIRRELS;
+    activeLandWorkers = LENGTH_OF_LAND;
     infectedSquirrel = INITIAL_INFECTION_LEVEL;
     totalDeadSquirrel = 0;
+    month = 0;
+
+    double start, end, duration, commStart, commEnd, commDuration, printStart, printEnd, printDuration;
+    commDuration = 0;
+    printDuration = 0;
+
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     start = MPI_Wtime();
-    start_for_wait = MPI_Wtime();
-
-    for (i=0; i<LENGTH_OF_LAND; i++)
-    do {
-        if (remainSquirrel > MAX_SQUIRREL_NUMBER || terminateSignal || month >= 24) {
-            terminateSignal = SQ_STOP;
-        } else {
-            terminateSignal = SQ_GO;
-        }
-        MPI_Status status;
-        // Recv the request from a squirrel that want to take action
-        MPI_Recv(&squirrelPid, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        // Send the permission to order the squirrel whether it can move or not.
-        MPI_Ssend(&terminateSignal, 1, MPI_INT, squirrelPid, 2, MPI_COMM_WORLD);
-
-        if (terminateSignal) {
-            activeWorkers--;
-        } else {
-            cells = updateLand(month, squirrelPid, cells, &squirlSignal);
-            if (squirlSignal == NOT_EXIST) {
-                remainSquirrel--;
-                infectedSquirrel--;
-                totalDeadSquirrel++;
-                activeWorkers--;
-            } else if (squirlSignal == BORN){
-                remainSquirrel++;
-                activeWorkers--;
-            } else if (squirlSignal == CATCH_DISEASE) {
-                infectedSquirrel++;
-            }
-
+    while(activeLandWorkers){
+        if (month < MONTH_LIMIT && activeSquirrelWorkers > 0 && activeSquirrelWorkers < MAX_SQUIRREL_NUMBER) {
             end = MPI_Wtime();
-            duration = end - start;
+            duration = end - start - commDuration - printDuration;
             if (duration > LAND_RENEW_RATE) {
-                printf("The %d month:\n", month);
-                printf("Population:\t[\t"); for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", cells.population[month % LAST_POPULATION_MONTHS][i]); printf("]\n");
-                printf("Infection:\t[\t"); for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", cells.infection[month % LAST_INFECTION_MONTHS][i]); printf("]\n");
-                printf("Alive: %d\tSick: %d\tDead: %d\n\n", remainSquirrel, infectedSquirrel, totalDeadSquirrel);
                 month++;
-                cells = renewMonth(month, cells);
+                for (i=0; i<LENGTH_OF_LAND; i++) {
+                    MPI_Ssend(&month, 1, MPI_INT, cellWorkers[i], 0, MPI_COMM_WORLD);
+                    MPI_Recv(&populationBuffer[i], 1, MPI_INT, cellWorkers[i], 199, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                    MPI_Recv(&infectionBuffer[i], 1, MPI_INT, cellWorkers[i], 199, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                }
                 start = MPI_Wtime();
+                printStart = MPI_Wtime();
+                printf("Month %d\talive %d\tinfected %d\tdead %d\n[\t", month, remainSquirrel, infectedSquirrel, totalDeadSquirrel);
+                for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", populationBuffer[i]); printf("]\n[\t");
+                for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", infectionBuffer[i]); printf("]\n\n");
+                printEnd = MPI_Wtime();
+                printDuration = printEnd - printStart;
             }
-            count++;
+
+            commStart = MPI_Wtime();
+            MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+
+            if (status.MPI_TAG == 99) {  // This is a message from squirrel actor
+                MPI_Recv(&squirlSignal, 1, MPI_INT, status.MPI_SOURCE, 99, MPI_COMM_WORLD, &status);
+                if (squirlSignal == NOT_EXIST) {
+                    remainSquirrel--;
+                    infectedSquirrel--;
+                    totalDeadSquirrel++;
+                    activeSquirrelWorkers--;
+                } else if (squirlSignal == BORN){
+                    // Check if the number of squirrel out of limit,
+                    // then decide the squirrel can give birth or not
+                    if (remainSquirrel < MAX_SQUIRREL_NUMBER) {
+                        squirlSignal = HEALTHY;
+                        remainSquirrel++;
+                        activeSquirrelWorkers++;
+                    } else {
+                        squirlSignal = NOT_EXIST;
+                        activeSquirrelWorkers++;
+                    }
+                    MPI_Ssend(&squirlSignal, 1, MPI_INT, status.MPI_SOURCE, 100, MPI_COMM_WORLD);
+                } else if (squirlSignal == CATCH_DISEASE) {
+                    infectedSquirrel++;
+                } else if (squirlSignal == TERMINATE) {
+                    activeSquirrelWorkers--;
+                }
+            }
+
+            commEnd = MPI_Wtime();
+            commDuration = commEnd - commStart;
+        } else if (activeSquirrelWorkers > 0) {
+            stopSignal = SQUIRREL_STOP_SIGNAL;  // Let the land actor tell squirrels to stop
+            for (i=0; i<LENGTH_OF_LAND; i++) {
+                MPI_Ssend(&stopSignal, 1, MPI_INT, cellWorkers[i], 0, MPI_COMM_WORLD);
+            }
+
+            while (activeSquirrelWorkers) {
+                MPI_Recv(&squirlSignal, 1, MPI_INT, MPI_ANY_SOURCE, 99, MPI_COMM_WORLD, &status);
+//                printf("squirlSignal %d, from sq %d ", squirlSignal, status.MPI_SOURCE);
+                if (squirlSignal == NOT_EXIST || squirlSignal == TERMINATE)
+                    activeSquirrelWorkers--;
+                else if (squirlSignal == BORN){
+                    // Check if the number of squirrel out of limit,
+                    // then decide the squirrel can give birth or not
+                    squirlSignal = NOT_EXIST;
+                    MPI_Ssend(&squirlSignal, 1, MPI_INT, status.MPI_SOURCE, 100, MPI_COMM_WORLD);
+//                    activeSquirrelWorkers--;
+                }
+//                printf("remain squirrel actor %d\n", activeSquirrelWorkers);
+            }
+
+        } else {
+            stopSignal = LAND_STOP_SIGNAL;
+            for (i=0; i<LENGTH_OF_LAND; i++) {
+                MPI_Ssend(&stopSignal, 1, MPI_INT, cellWorkers[i], 0, MPI_COMM_WORLD);
+                activeLandWorkers--;
+//                printf("remain land actor %d\n", activeLandWorkers);
+            }
         }
-    } while (activeWorkers);
+    }
 
-    printf("The %d month:\n", month);
-    printf("Population:\t[\t"); for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", cells.population[month % LAST_POPULATION_MONTHS][i]); printf("]\n");
-    printf("Infection:\t[\t"); for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", cells.infection[month % LAST_INFECTION_MONTHS][i]); printf("]\n");
-    printf("Alive: %d\tSick: %d\tDead: %d\n\n", remainSquirrel, infectedSquirrel, totalDeadSquirrel);
-    printf("The loop has executed %d times, it is %d months\n", count, month);
+    printf("[Last Output] Month %d\talive %d\tinfected %d\tdead %d\n[\t", month, remainSquirrel, infectedSquirrel, totalDeadSquirrel);
+    for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", populationBuffer[i]); printf("]\n[\t");
+    for (i=0; i<LENGTH_OF_LAND; i++) printf("%d\t", infectionBuffer[i]); printf("]\n\n");
+    printf("Controller Stop\n");
     shutdownPool();
-
     return 0;
 }
 
@@ -202,13 +344,26 @@ struct Squirrel initialiseSquirrel(){
 
     int i, state, position, parentId;
     struct Squirrel squirl;
+    MPI_Status status;
 
     parentId = getCommandData();
-    MPI_Recv(&state, 1, MPI_INT, parentId, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    MPI_Probe(parentId, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+
+    if (status.MPI_TAG == 10) {
+        MPI_Recv(&state, 1, MPI_INT, parentId, 10, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&state, 1, MPI_INT, parentId, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&controllerWorkerPid, 1, MPI_INT, parentId, 11, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&cellWorkers, LENGTH_OF_LAND, MPI_INT, parentId, 12, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    } else {
+        MPI_Recv(&state, 1, MPI_INT, parentId, 1, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&controllerWorkerPid, 1, MPI_INT, parentId, 11, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&cellWorkers, LENGTH_OF_LAND, MPI_INT, parentId, 12, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
 
     squirl.state = state;
     squirl.steps = 0;
-    squirl.sick_steps = 0;
+    squirl.sickSteps = 0;
     squirl.x = 0;
     squirl.y = 0;
 
@@ -226,28 +381,55 @@ struct Squirrel initialiseSquirrel(){
     return squirl;
 }
 
-struct LandCells initialiseLandCells(){
-    struct LandCells cells;
-    int i, j, position_buffer, state_buffer;
+struct LandCell initialiseLandCell(){
+    struct LandCell cell;
+    int i, j;
     // Initialise population
     for (i=0; i<LAST_POPULATION_MONTHS; i++) {
-        for (j=0; j<LENGTH_OF_LAND; j++){
-            cells.population[i][j] = 0;
-        }
+        cell.population[i] = 0;
     }
 
     // Initialise infection
     for (i=0; i<LAST_INFECTION_MONTHS; i++) {
-        for (j=0; j<LENGTH_OF_LAND; j++){
-            cells.infection[i][j] = 0;
-        }
+        cell.infection[i] = 0;
     }
 
-    return cells;
+    return cell;
 }
 
 struct Squirrel squirlGo(int rank, struct Squirrel squirl) {
     int i, position;
+    float x_new, y_new;
+    squirrelStep(&squirl.x, &squirl.y, &x_new, &y_new, &seed);
+    squirl.x = x_new;
+    squirl.y = y_new;
+
+    position = getCellFromPosition(&squirl.x, &squirl.y);
+    // Send the squirrel's position
+    int recvBuffer[2], permissionSignal;
+
+    // Send the rank to land to tell who I am
+    MPI_Ssend(&rank, 1, MPI_INT, cellWorkers[position], 0, MPI_COMM_WORLD);
+    // Recv the permission signal
+    MPI_Recv(&permissionSignal, 1, MPI_INT, cellWorkers[position], 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    if (!permissionSignal) {
+        squirl.state = TERMINATE;
+        return squirl;
+    }
+
+    // Send squirrel state to Land Actor
+    MPI_Send(&squirl.state, 1, MPI_INT, cellWorkers[position], 3, MPI_COMM_WORLD);
+    // Recv the population and infection level at this position
+    MPI_Recv(recvBuffer, 2, MPI_INT, cellWorkers[position], 6, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    // Update population and infection level
+    squirl.pop[squirl.steps % LAST_POPULATION_STEPS] = recvBuffer[0];
+    squirl.inf[squirl.steps % LAST_INFECTION_STEPS] = recvBuffer[1];
+
+    squirl.steps++;
+    if (squirl.state == SICK){
+        squirl.sickSteps++;
+    }
 
     // The squirrel will catches disease
     if (squirl.state == HEALTHY) {
@@ -261,30 +443,6 @@ struct Squirrel squirlGo(int rank, struct Squirrel squirl) {
         }
     }
 
-    float x_new, y_new;
-    squirrelStep(&squirl.x, &squirl.y, &x_new, &y_new, &seed);
-    squirl.x = x_new;
-    squirl.y = y_new;
-
-    position = getCellFromPosition(&squirl.x, &squirl.y);
-    // Send the squirrel's position
-    int message[2], recv_buffer[2], returnCode;
-    message[0] = squirl.state;
-    message[1] = position;
-
-    // Send new pos to Land Actor
-    MPI_Send(message, 2, MPI_INT, LAND_ACTOR, 3, MPI_COMM_WORLD);
-    // Recv the population and infection level at this position
-    MPI_Recv(recv_buffer, 2, MPI_INT, LAND_ACTOR, 6, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    // Update population and infection level
-    squirl.pop[squirl.steps % LAST_POPULATION_STEPS] = recv_buffer[0];
-    squirl.inf[squirl.steps % LAST_INFECTION_STEPS] = recv_buffer[1];
-
-    squirl.steps++;
-    if (squirl.state == SICK){
-        squirl.sick_steps++;
-    }
-
     // The squirrel will give birth
     if (squirl.steps % GIVE_BIRTH_STEPS == 0) {
         float avg_pop;
@@ -294,63 +452,59 @@ struct Squirrel squirlGo(int rank, struct Squirrel squirl) {
         avg_pop /= LAST_POPULATION_STEPS;
         if (willGiveBirth(avg_pop, &seed)){
             /* Create a new process and squirrel */
-            int childPid, childState;
-            childPid = startWorkerProcess();
+            int childPid, childState, identity;
             childState = BORN;
-            MPI_Send(&childState, 1, MPI_INT, childPid, 1, MPI_COMM_WORLD);
+            // Enquiry controller whether I can give birth
+            MPI_Ssend(&childState, 1, MPI_INT, controllerWorkerPid, 99, MPI_COMM_WORLD);
+            MPI_Recv(&childState, 1, MPI_INT, controllerWorkerPid, 100, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // If it does not recv the BORN signal, it means the number of squirrels out of limit.
+            if (childState == HEALTHY) {
+                childPid = startWorkerProcess();
+
+                identity = SQUIRREL_ACTOR;
+                MPI_Ssend(&identity, 1, MPI_INT, childPid, 10, MPI_COMM_WORLD);
+
+                MPI_Ssend(&childState, 1, MPI_INT, childPid, 1, MPI_COMM_WORLD);
+                // Tell Squirrels who is controller
+
+                MPI_Ssend(&controllerWorkerPid, 1, MPI_INT, childPid, 11, MPI_COMM_WORLD);
+                // Tell Squirrels who are land actors
+                MPI_Ssend(&cellWorkers, LENGTH_OF_LAND, MPI_INT, childPid, 12, MPI_COMM_WORLD);
+            }
         }
     }
 
     // The squirrel will die
-    if (squirl.sick_steps>50) {
+    if (squirl.sickSteps>50) {
         if (willDie(&seed)) {
             squirl.state = NOT_EXIST;
-            message[0] = squirl.state;
-            int terminateSignal;
-            // Send the rank to land to tell who I am
-            MPI_Ssend(&rank, 1, MPI_INT, LAND_ACTOR, 0, MPI_COMM_WORLD);
-            // Recv the permission signal
-            MPI_Recv(&terminateSignal, 1, MPI_INT, LAND_ACTOR, 2, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            if (!terminateSignal)
-                MPI_Send(message, 2, MPI_INT, LAND_ACTOR, 3, MPI_COMM_WORLD);
         }
     }
 
     return squirl;
 }
 
-struct LandCells updateLand(int month, int squirrelPid, struct LandCells cells, int* squirlSignal){
-    int returnCode, i, squirlState, recv_message_buffer[2], send_message_buffer[2];
+struct LandCell updateLand(int month, int squirrelPid, struct LandCell cell){
+    int i, squirlState, sendBuffer[2];
     MPI_Status status;
-    MPI_Recv(recv_message_buffer, 2, MPI_INT, squirrelPid, 3, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&squirlState, 1, MPI_INT, squirrelPid, 3, MPI_COMM_WORLD, &status);
 
-    squirlState = recv_message_buffer[0];
-    if (squirlState != NOT_EXIST) {
-        cells.population[month % LAST_POPULATION_MONTHS][recv_message_buffer[1]]+=1;
-        if (squirlState == SICK)
-            cells.infection[month % LAST_INFECTION_MONTHS][recv_message_buffer[1]]+=1;
+    cell.population[month % LAST_POPULATION_MONTHS]+=1;
+    if (squirlState == SICK)
+        cell.infection[month % LAST_INFECTION_MONTHS]+=1;
 
-        // According to the recv position, send the population and infection level back
-        send_message_buffer[0] = 0;
-        send_message_buffer[1] = 0;
-        for (i=0; i<LAST_POPULATION_MONTHS; i++) send_message_buffer[0]+=cells.population[i][recv_message_buffer[1]];
-        for (i=0; i<LAST_INFECTION_MONTHS; i++) send_message_buffer[1]=cells.infection[month % LAST_INFECTION_MONTHS][recv_message_buffer[1]];
-        MPI_Send(send_message_buffer, 2, MPI_INT, squirrelPid, 6, MPI_COMM_WORLD);
-    }
-    *squirlSignal = squirlState;
+    // According to the recv position, send the population and infection level back
+    sendBuffer[0] = 0;
+    sendBuffer[1] = 0;
+    for (i=0; i<LAST_POPULATION_MONTHS; i++) sendBuffer[0]+=cell.population[i];
+    for (i=0; i<LAST_INFECTION_MONTHS; i++) sendBuffer[1]=cell.infection[month % LAST_INFECTION_MONTHS];
+    MPI_Ssend(sendBuffer, 2, MPI_INT, squirrelPid, 6, MPI_COMM_WORLD);
 
-    return cells;
+    return cell;
 }
 
-struct LandCells renewMonth(int month, struct LandCells cells){
-    int i;
-    for (i=0; i<LENGTH_OF_LAND; i++){
-        cells.population[month % LAST_POPULATION_MONTHS][i] = 0;
-    }
-
-    for (i=0; i<LENGTH_OF_LAND; i++){
-        cells.infection[month % LAST_INFECTION_MONTHS][i] = 0;
-    }
-
-    return cells;
+struct LandCell renewMonth(int month, struct LandCell cell){
+    cell.population[month % LAST_POPULATION_MONTHS] = 0;
+    cell.infection[month % LAST_INFECTION_MONTHS] = 0;
+    return cell;
 }
