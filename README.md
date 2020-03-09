@@ -2,6 +2,8 @@
 
 This is a simulation of British red squirrels infecting parapoxvirus. 
 
+The infrastructure is **Master actor + land actor + N squirrel actors**
+
 ## Environment setup
 
 After entering directory `SquirlSim`, run
