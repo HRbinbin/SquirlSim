@@ -28,8 +28,8 @@ mpicc -cc=icc build/squirl.o build/ran2.o build/test.o build/pool.o -o bin/test 
 
 The auto-make script generates a directory `build` with the object files. The executable file is in `bin`
 
-Use `mpirun` to run the code. We should assign 218 processes since there are 16 land actors, 
-up to 200 squirrel actors, a controller actor and a master actor. We can change the parameters in `main.h`. 
+Use `mpirun` to run the code. We should assign **218** processes since there are **16 land actors, 
+up to 200 squirrel actors, a controller actor and a master actor**. We can change the parameters in `main.h`. 
 
 After running `mpirun -n 218 bin/test`, we can see the simulation output of every month.
 
