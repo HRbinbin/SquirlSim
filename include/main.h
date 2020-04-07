@@ -21,15 +21,15 @@
 
 #define LENGTH_OF_LAND 16
 #define MONTH_LIMIT 24
-//#define LAND_RENEW_RATE 0.1
-#define LAND_RENEW_RATE 0.00001
+#define LAND_RENEW_RATE 0.0000045
+//#define LAND_RENEW_RATE 1
 #define LAND_STOP_SIGNAL -1
 #define SQUIRREL_STOP_SIGNAL -2
 
-#define MAX_SQUIRREL_NUMBER 37
+#define MAX_SQUIRREL_NUMBER 200
 #define INITIAL_NUMBER_OF_SQUIRRELS 34
 #define INITIAL_INFECTION_LEVEL 4
-#define GIVE_BIRTH_STEPS 1
+#define GIVE_BIRTH_STEPS 50
 
 #define LAST_POPULATION_STEPS 50
 #define LAST_INFECTION_STEPS 50
@@ -63,8 +63,9 @@ static void workerCode(WorkerFunc workerFunc);
 int squirrelWorker();
 int landWorker();
 int controllerWorker();
-struct LandCell updateLand(int month, int squirrelPid, struct LandCell cell);
+struct LandCell updateLand(int month, MPI_Status status, struct LandCell cell);
 struct LandCell renewMonth(int month, struct LandCell cell);
+void terminateSquirrel(MPI_Status status);
 struct Squirrel squirlGo(int rank, struct Squirrel squirl);
 
 #endif //SQUIRLSIM_MAIN_H

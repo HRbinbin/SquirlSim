@@ -1,12 +1,12 @@
-MF=	Makefile
+MF=	Makefile-archer
 
 # For Cirrus
-CC=	mpicc
-CFLAGS=	-cc=icc
+#CC=	mpicc
+#CFLAGS=	-cc=icc
 
 # For ARCHER
-#CC=	cc
-#CFLAGS=	-g
+CC=	cc
+CFLAGS=	-g
 
 # Use OpenMP
 # LFLAGS=	-fopenmp -O3
@@ -30,6 +30,6 @@ $(BUILDDIR)/%.o: $(SRCDIR)/%.$(SRCEXT)
 #	$(CC) $(CFLAGS) $(INC) -c -o $@ $<
 
 clean:
-	$(RM) -r $(BUILDDIR) $(TARGET) SquirlSim.e* SquirlSim.o*
+	$(RM) -r $(BUILDDIR) $(TARGET)
 
 .PHONY: clean

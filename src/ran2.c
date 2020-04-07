@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include "ran2.h"
+#include "../include/ran2.h"
 
 
 #define IM1 2147483563
