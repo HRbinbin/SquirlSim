@@ -1,7 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "mpi.h"
-#include "pool.h"
+#include "../include/pool.h"
 
 // MPI P2P tag to use for command communications, it is important not to reuse this
 #define PP_CONTROL_TAG 16384

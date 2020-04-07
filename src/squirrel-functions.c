@@ -1,13 +1,10 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
-#include "ran2.h"
-#include "squirl.h"
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
+#include "../include/ran2.h"
+#include "../include/squirrel-functions.h"
 
 /**
  * Initialises the random number generator, call it once at the start of the program on each process. The input
@@ -19,7 +16,7 @@
  * which also modify the seed
  */
 void initialiseRNG(long *seed) {
-	 ran2(seed);
+    ran2(seed);
 }
 
 /**
@@ -29,12 +26,13 @@ void initialiseRNG(long *seed) {
  * generator and is also modified.
  * x_new can point to x, and y_new can point to y
  */
-void squirrelStep(float* x, float* y, float* x_new, float* y_new, long * state){
+void squirrelStep(float x, float y, float* x_new, float* y_new, long * state){
+
     float diff=ran2(state);
-    *x_new=(*x+diff)-(int)(*x+diff);
+    *x_new=(x+diff)-(int)(x+diff);
 
     diff=ran2(state);
-    *y_new=(*y+diff)-(int)(*y+diff);
+    *y_new=(y+diff)-(int)(y+diff);
 }
 
 /**
@@ -42,7 +40,7 @@ void squirrelStep(float* x, float* y, float* x_new, float* y_new, long * state){
  * which is modified. You can enclose this function call in an if statement if that is useful.
  */
 int willGiveBirth(float avg_pop, long * state) {
-	float probability=100.0; // Decrease this to make more likely, increase less likely
+    float probability=100.0; // Decrease this to make more likely, increase less likely
     float tmp=avg_pop/probability;
 
     return (ran2(state)<(atan(tmp*tmp)/(4*tmp)));
@@ -53,7 +51,7 @@ int willGiveBirth(float avg_pop, long * state) {
  * and a random seed which is modified. You can enclose this function call in an if statement if that is useful.
  */
 int willCatchDisease(float avg_inf_level, long * state) {
-	float probability=1000.0; // Decrease this to make more likely, increase less likely
+    float probability=1000.0; // Decrease this to make more likely, increase less likely
     return(ran2(state)<(atan(((avg_inf_level < 40000 ? avg_inf_level : 40000))/probability)/M_PI));
 }
 
@@ -68,6 +66,6 @@ int willDie(long * state) {
 /**
  * Returns the id of the cell from its x and y coordinates.
  */
-int getCellFromPosition(float * x, float * y){
-    return((int)(*x*4)+4*(int)(*y*4));
+int getCellFromPosition(float x, float y){
+    return((int)(x*4)+4*(int)(y*4));
 }

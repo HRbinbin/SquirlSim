@@ -3,7 +3,7 @@
 
 void initialiseRNG(long *);
 
-void squirrelStep(float *, float *, float *, float *, long *);
+void squirrelStep(float, float, float *, float *, long *);
 
 int willGiveBirth(float, long *);
 
@@ -11,6 +11,6 @@ int willCatchDisease(float, long *);
 
 int willDie(long *);
 
-int getCellFromPosition(float*, float*);
+int getCellFromPosition(float, float);
 
 #endif

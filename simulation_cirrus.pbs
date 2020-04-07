@@ -1,0 +1,21 @@
+#!/bin/bash --login
+
+# PBS job options (name, compute nodes, job time)
+#PBS -N SquirlSim
+#PBS -l select=7:ncpus=36
+#PBS -l place=scatter:excl
+#PBS -l walltime=00:10:00
+
+#PBS -A d171-s1905483
+
+# Change to the directory that the job was submitted from
+cd $PBS_O_WORKDIR
+
+# Load any required modules
+module load mpt
+module load intel-compilers-18
+
+echo Running ..
+# Launch the parallel job
+mpiexec_mpt -ppn 36 -n 218 ./bin/run
+
