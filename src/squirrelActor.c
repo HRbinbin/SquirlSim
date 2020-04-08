@@ -27,14 +27,22 @@ int count;
 int position;
 int recvBuffer[2];
 
-int initialiseSquirrel();
+/** ========= The functions blow from actor framework, they will be called in framework.c ========= **/
 int squirrelAsk(int workerPid);
+int initialiseSquirrel();
 int squirrelWorker();
+/** ========= The functions blow belong to this actor ========= **/
 int squirlGo();
 void reproduce();
 float get_avg_inf_level();
 float get_avg_pop();
 
+/**
+ * @brief The function for worker asking message from the master.
+ * @param[in] workerPid
+ * The workers' pids.
+ *
+ */
 int squirrelAsk(int workerPid){
     int SquirlState;
     if (sickCount < INITIAL_INFECTION_LEVEL){
@@ -52,6 +60,10 @@ int squirrelAsk(int workerPid){
     return workerPid;
 }
 
+/**
+ * @brief The function for worker initialising after recv the message from the master.
+ *
+ */
 int initialiseSquirrel(){
     int i, parentId;
 
@@ -97,6 +109,10 @@ int initialiseSquirrel(){
     return 0;
 }
 
+/**
+ * @brief The actor work code.
+ *
+ */
 int squirrelWorker(){
     while (state != NOT_EXIST && state != TERMINATE){
         squirlGo();
@@ -115,6 +131,10 @@ int squirrelWorker(){
     return 0;
 }
 
+/**
+ * @brief The squirrel move and try to catch disease, reproduce and die.
+ *
+ */
 int squirlGo() {
     squirrelStep(x, y, &x, &y, &seed);
     position = getCellFromPosition(x, y);
@@ -145,7 +165,7 @@ int squirlGo() {
             sickSteps++;
 
         // The squirrel will catches disease
-        if (steps > 50 && state == HEALTHY && willCatchDisease(get_avg_inf_level(), &seed))
+        if (steps > CATCH_DISEASE_STEPS && state == HEALTHY && willCatchDisease(get_avg_inf_level(), &seed))
             state = CATCH_DISEASE;
 
         // The squirrel will give birth
@@ -160,6 +180,11 @@ int squirlGo() {
     }
 }
 
+/**
+ * @brief The squirrel reproduce need to enquiry the controller, if the
+ * controller permit then the squirrel can give birth
+ *
+ */
 void reproduce(){
     /* Create a new process and squirrel */
     int childPid, childState, identity;
@@ -188,6 +213,10 @@ void reproduce(){
     }
 }
 
+/**
+ * @brief Get the average infection level
+ *
+ */
 float get_avg_inf_level(){
     int i;
     float avg_inf_level;
@@ -199,6 +228,10 @@ float get_avg_inf_level(){
     return avg_inf_level;
 }
 
+/**
+ * @brief Get the average population influx
+ *
+ */
 float get_avg_pop(){
     int i;
     float avg_pop;

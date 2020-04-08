@@ -22,24 +22,40 @@ int stopSignal;
 
 MPI_Status status;
 
-int initialiseController();
+/** ========= The functions blow from actor framework, they will be called in framework.c ========= **/
 int controllerAsk(int workerPid);
+int initialiseController();
 int controllerWorker();
+/** ========= The functions blow belong to this actor ========= **/
 void sendAllLandCell(int * sendBuffer, int count);
 void sendRecvAllPopNInf(int * sendBuffer, int count);
 void countSquirrels();
 void print_log();
 
-int initialiseController(){
-    MPI_Recv(cellWorkers, LENGTH_OF_LAND, MPI_INT, 0, INITIAL_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    return 0;
-}
-
+/**
+ * @brief The function for worker asking message from the master.
+ * @param[in] workerPid
+ * The workers' pids.
+ *
+ */
 int controllerAsk(int workerPid){
     MPI_Send(cellWorkers, LENGTH_OF_LAND, MPI_INT, workerPid, INITIAL_TAG, MPI_COMM_WORLD);
     return workerPid;
 }
 
+/**
+ * @brief The function for worker initialising after recv the message from the master.
+ *
+ */
+int initialiseController(){
+    MPI_Recv(cellWorkers, LENGTH_OF_LAND, MPI_INT, 0, INITIAL_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    return 0;
+}
+
+/**
+ * @brief The actor work code.
+ *
+ */
 int controllerWorker(){
     int i, squirlSignal;
 
@@ -96,6 +112,14 @@ int controllerWorker(){
     return 0;
 }
 
+/**
+ * @brief Non-blocking send to all land workers with the same massage
+ * @param[in] sendBuffer
+ * The message buffer to send
+ * @param[in] count
+ * The number of variables in the message buffer
+ *
+ */
 void sendAllLandCell(int * sendBuffer, int count){
     int i;
     MPI_Request requestList[LENGTH_OF_LAND];
@@ -108,6 +132,15 @@ void sendAllLandCell(int * sendBuffer, int count){
     MPI_Waitall(LENGTH_OF_LAND, requestList, statusList);
 }
 
+/**
+ * @brief Non-blocking send to all land workers with the same massage,
+ * and recv the population influx and infection level
+ * @param[in] sendBuffer
+ * The message buffer to send
+ * @param[in] count
+ * The number of variables in the message buffer
+ *
+ */
 void sendRecvAllPopNInf(int * sendBuffer, int count){
     int i;
     MPI_Request requestList[LENGTH_OF_LAND * 2];
@@ -120,6 +153,12 @@ void sendRecvAllPopNInf(int * sendBuffer, int count){
     MPI_Waitall(LENGTH_OF_LAND, requestList, statusList);
 }
 
+/**
+ * @brief Blocking communicate with squirrels. This function is for counting
+ * the alive squirrels, death, sick and born. And send the message to squirrels
+ * in order to permit the squirrels to give birth or terminate the squirrels
+ *
+ */
 void countSquirrels(){
     int squirlSignal;
 
@@ -149,6 +188,10 @@ void countSquirrels(){
     }
 }
 
+/**
+ * @brief Print the population and infection level in current month
+ *
+ */
 void print_log(){
     int i;
     printf("Month %2d\talive %d\tinfected %d\tdead %d\n", month, remainSquirrel, infectedSquirrel, totalDeadSquirrel);

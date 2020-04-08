@@ -7,13 +7,17 @@
 #ifndef SQUIRLSIM_MAIN_H
 #define SQUIRLSIM_MAIN_H
 
-// Worker require variables
+/** Arrays recording workers' pids **/
 int controllers[CONTROLLER_NUMBER];
 int cellWorkers[LENGTH_OF_LAND];
 int squirrelWorkers[INITIAL_NUMBER_OF_SQUIRRELS];
+
+/** Global variables, that need to be accessed by the functions from other .c files **/
 int sickCount;
 
+/** MPI World Group **/
 MPI_Group worldGroup;
+
 typedef int (*WorkerFunc)();
 
 static int masterInitialiseWorker(int identity);

@@ -4,14 +4,16 @@
 
 #ifndef SQUIRLSIM_ACTORCONFIG_H
 #define SQUIRLSIM_ACTORCONFIG_H
-
+/** Stop signal **/
 #define LAND_STOP_SIGNAL -1
 #define SQUIRREL_STOP_SIGNAL -2
 
+/** Actor identity **/
 #define CONTROLLER_ACTOR 0
 #define LAND_ACTOR 1
 #define SQUIRREL_ACTOR 2
 
+/** Squirrel state **/
 #define NOT_EXIST 0
 #define BORN 1
 #define HEALTHY 2
@@ -19,9 +21,7 @@
 #define CATCH_DISEASE 4
 #define TERMINATE 5
 
-#define SQ_GO 0
-#define SQ_STOP 1
-
+/** Communication tag **/
 #define IDENTITY_TAG 1024
 #define INITIAL_TAG 1025
 #define SQUIRREL_RECV_TAG 1026

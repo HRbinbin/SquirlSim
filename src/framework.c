@@ -1,9 +1,6 @@
 //
 // Created by Ruibin on 2020/2/28.
 //
-/*
- * Example code to run and test the process pool. To compile use something like mpicc -o test test.c pool.c
- */
 
 #include <stdio.h>
 #include <math.h>
@@ -23,6 +20,10 @@ static void masterSendWorkers(int count, int workerPids[], WorkerFunc workerAskF
 static void masterCode();
 static void workerCode(WorkerFunc initialiseFunc, WorkerFunc workerFunc);
 
+/**
+ * @brief Here is the global variables that need to be initialised in the framework
+ *
+ */
 static void masterInitialiseVariables() {
     sickCount = 0;
 }
@@ -71,6 +72,27 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+/**
+ * @brief The master process code. It should be a structure like this
+ * @example
+ *
+ *     masterInitialiseVariables();  // Initialise the variables
+ *
+ *     masterInitialiseWorkers(WORKER1, n1, worker1Pids);  // Initialise the workers 1
+ *     masterInitialiseWorkers(WORKER2, n2, worker2Pids);  // Initialise the workers 2
+ *     ...
+ *
+ *     masterSendWorkers(n1, worker1Pids, worker1AskFunc);  // Response workers 1 ask
+ *     masterSendWorkers(n2, worker2Pids, worker2AskFunc);  // Response workers 2 ask
+ *     ...
+ *
+ *     int masterStatus = masterPoll();
+ *     while (masterStatus) {
+ *         masterStatus=masterPoll();
+ *     }
+ *
+ *
+ */
 static void masterCode() {
     masterInitialiseVariables();
     // Initial controller
@@ -98,6 +120,13 @@ static void masterCode() {
     printf("Master Quit. Runtime %f\n", end-start);
 }
 
+
+/**
+ * @brief The master initialise 1 worker
+ * @param[in] identity
+ * The worker's Identity, to define what kinds of actor is the worker.
+ *
+ */
 static int masterInitialiseWorker(int identity){
     // Initial controller
     int workerPid = startWorkerProcess();
@@ -106,6 +135,16 @@ static int masterInitialiseWorker(int identity){
     return workerPid;
 }
 
+/**
+ * @brief The master initialise a brunch of workers
+ * @param[in] identity
+ * The worker's Identity, to define what kinds of actor are the workers.
+ * @param[in] count
+ * The number of this brunch of workers
+ * @param[out] workerPids
+ * The statics array that records the workers' pids.
+ *
+ */
 static void masterInitialiseWorkers(int identity, int count, int workerPids[]){
     int i;
     for (i=0;i<count;i++) {
@@ -114,6 +153,17 @@ static void masterInitialiseWorkers(int identity, int count, int workerPids[]){
     }
 }
 
+/**
+ * @brief The master response what workers' ask
+ * @param[in] count
+ * The number of this brunch of workers
+ * @param[in] workerPids
+ * The workers' pids.
+ * @param[in] workerAskFunc
+ * Functon pointer that should be implemented in Actor themselves.
+ * The Function should be like: workerAskFunc(int pid)
+ *
+ */
 static void masterSendWorkers(int count, int workerPids[], WorkerFunc workerAskFunc){
     int i, workerPid;
     for (i=0;i<count;i++) {
@@ -121,6 +171,16 @@ static void masterSendWorkers(int count, int workerPids[], WorkerFunc workerAskF
     }
 }
 
+/**
+ * @brief The worker code
+ * @param[in] initialiseFunc
+ * The initialise function that the worker should be done.
+ * The function should be implemented in Actor themselves
+ * @param[in] workerFunc
+ * The worker running function on which the worker actual work.
+ * The function should be implemented in Actor themselves
+ *
+ */
 static void workerCode(WorkerFunc initialiseFunc, WorkerFunc workerFunc) {
     int workerStatus = 1;
     while (workerStatus) {
@@ -128,6 +188,7 @@ static void workerCode(WorkerFunc initialiseFunc, WorkerFunc workerFunc) {
         initialiseFunc();
         // Worker do work
         workerFunc();
-        workerStatus=workerSleep();	// This MPI process will sleep, further workers may be run on this process now
+        // This MPI process will sleep, further workers may be run on this process now
+        workerStatus=workerSleep();
     }
 }
