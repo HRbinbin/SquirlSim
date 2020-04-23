@@ -1,12 +1,14 @@
 # Squirrels disease simulation
 
+[![lifecycle](https://img.shields.io/badge/lifecycle-archived-red.svg)](https://www.tidyverse.org/lifecycle/#archived)
+[![License: MIT](https://img.shields.io/github/license/r-lib/ghactions.svg?style=flat)](https://opensource.org/licenses/MIT)
+
 This is a simulation of British red squirrels infecting parapoxvirus.
 
 The infrastructure is **Master actor + Controller actor + N land actors + N squirrel actors**.
 
 ## Author
 Name: Ray Huang <br>
-Exam number: B157041 <br>
 Email: s1905483@ed.ac.uk <br>
 
 ## Environment setup
