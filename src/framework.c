@@ -117,7 +117,7 @@ static void masterCode() {
     }
 
     end = MPI_Wtime();
-    printf("Master Quit. Runtime %f\n", end-start);
+    printf("Master Quit. Runtime %f s\n", end-start);
 }
 
 

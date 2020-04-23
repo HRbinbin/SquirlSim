@@ -10,7 +10,6 @@
 #include "../include/actorConfig.h"
 
 int cellWorkers[LENGTH_OF_LAND];
-int controllerWorkerPid;
 int popNInf[LENGTH_OF_LAND * 2];
 
 int month;
