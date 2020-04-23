@@ -2,13 +2,12 @@
 
 This is a simulation of British red squirrels infecting parapoxvirus.
 
-The infrastructure is **Master actor + Controller actor + N land actors + N squirrel actors**  
-
-The infrastructure is **Master actor + land actor + N squirrel actors**
+The infrastructure is **Master actor + Controller actor + N land actors + N squirrel actors**.
 
 ## Author
-Ray Huang <br>
-s1905483@ed.ac.uk <br>
+Name: Ray Huang <br>
+Exam number: B157041 <br>
+Email: s1905483@ed.ac.uk <br>
 
 ## Environment setup
 
@@ -25,11 +24,15 @@ After setup, the the src code can be compiled
 
 ```
 $ make
-mpicc -cc=icc -I include -c -o build/squirl.o src/squirl.c
-mpicc -cc=icc -I include -c -o build/ran2.o src/ran2.c
-mpicc -cc=icc -I include -c -o build/test.o src/test.c
-mpicc -cc=icc -I include -c -o build/pool.o src/pool.c
-mpicc -cc=icc build/squirl.o build/ran2.o build/test.o build/pool.o -o bin/run -lm
+mpicc -cc=icc -c -o build/squirrelActor.o src/squirrelActor.c
+mpicc -cc=icc -c -o build/controllerActor.o src/controllerActor.c
+mpicc -cc=icc -c -o build/ran2.o src/ran2.c
+mpicc -cc=icc -c -o build/test.o src/test.c
+mpicc -cc=icc -c -o build/landActor.o src/landActor.c
+mpicc -cc=icc -c -o build/pool.o src/pool.c
+mpicc -cc=icc -c -o build/framework.o src/framework.c
+mpicc -cc=icc -c -o build/squirrel-functions.o src/squirrel-functions.c
+mpicc -cc=icc build/squirrelActor.o build/controllerActor.o build/ran2.o build/test.o build/landActor.o build/pool.o build/framework.o build/squirrel-functions.o -o bin/run -lm -O3
 ```
 
 The auto-make script generates a directory `build` with the object files. The executable file is in `bin`
